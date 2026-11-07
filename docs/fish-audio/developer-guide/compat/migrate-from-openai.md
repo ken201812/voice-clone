@@ -1,0 +1,333 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.fish.audio/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Migrate from OpenAI
+
+> Point the official OpenAI SDKs at Fish Audio: speech, transcription, chat-modality audio, and the Realtime WebSocket.
+
+Configure your client once; every call shape below then works unchanged.
+
+```python Python theme={null}
+import os
+
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://api.fish.audio/compat/v1",
+    api_key=os.environ["FISH_API_KEY"],
+)
+```
+
+```javascript Node theme={null}
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "https://api.fish.audio/compat/v1",
+  apiKey: process.env.FISH_API_KEY,
+});
+```
+
+The same change works in any framework that takes an OpenAI-compatible base
+URL. Authentication is the standard `Authorization: Bearer` header; on
+WebSockets, `?api_key=<key>` in the URL also works. The
+Groq SDK speaks the same protocol; see
+[Migrate from Groq](https://docs.fish.audio/developer-guide/compat/migrate-from-groq.md).
+
+| Feature | Supported |
+| - | - |
+| Text to speech (streamed) | ✓ |
+| Speech to text + word timestamps | ✓ (REST) |
+| Subtitles (`srt` / `vtt`) | ✓ |
+| Chat-modality audio | ✓ |
+| Realtime WebSocket (TTS + STT) | ✓ |
+| Model catalog | ✓ |
+| TTS character timestamps | – |
+| Voice library listing | – |
+
+## Text to speech
+
+`POST /v1/audio/speech`
+
+These samples use the free `fish-audio/s2.1-pro-free` model, so they work before you add API credit. Use `fish-audio/s2.1-pro` in production; the OpenAI model names below map to it.
+
+```python Python theme={null}
+with client.audio.speech.with_streaming_response.create(
+    model="fish-audio/s2.1-pro-free",
+    input="Hello from Fish Audio!",
+    voice="",  # a voice ID from your Fish voice library; "" = model default
+    response_format="mp3",  # mp3 | wav | opus | pcm | pcm16
+    speed=1.1,
+) as r:
+    r.stream_to_file("out.mp3")
+```
+
+```javascript Node theme={null}
+import fs from "node:fs";
+
+const response = await client.audio.speech.create({
+  model: "fish-audio/s2.1-pro-free",
+  input: "Hello from Fish Audio!",
+  voice: "", // a voice ID from your Fish voice library; "" = model default
+  response_format: "mp3", // mp3 | wav | opus | pcm | pcm16
+  speed: 1.1,
+});
+fs.writeFileSync("out.mp3", Buffer.from(await response.arrayBuffer()));
+```
+
+```bash curl theme={null}
+curl https://api.fish.audio/compat/v1/audio/speech \
+  -H "Authorization: Bearer $FISH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "fish-audio/s2.1-pro-free",
+       "input": "Hello from Fish Audio!",
+       "response_format": "mp3",
+       "speed": 1.1}' \
+  --output out.mp3
+```
+
+Differences from OpenAI:
+
+* **Set `response_format` explicitly.** It defaults to `pcm` here, not `mp3`
+  as on OpenAI. Code that omits it and writes the bytes to `out.mp3` produces a
+  file that won't play.
+* **`voice` is a Fish voice ID**; see
+  [Voices](https://docs.fish.audio/developer-guide/getting-started/migration.md#voices). Preset names
+  (`nova`, `echo`, …) are a 400, except `alloy`, which happens to synthesize in
+  an unrelated voice; see
+  [capabilities](https://docs.fish.audio/developer-guide/compat/capabilities.md#what-each-protocol-supports).
+* **`instructions` is refused with a 400.** Use `X-Fish-*` headers or
+  `provider.options` for delivery control instead.
+* **`stream_format` must be `audio`.** `stream_format: "sse"` is a first-class
+  parameter in current OpenAI SDKs and is refused with a 400 here; the
+  response is always the raw audio stream.
+
+`speed` works as on OpenAI. `sample_rate` (Hz) triggers a real resample, but
+each codec accepts only certain rates and asking for one it doesn't take is a
+**400, not a silent fallback**; the per-codec rate table is in
+[Audio formats](https://docs.fish.audio/developer-guide/compat/capabilities.md#audio-formats).
+
+One asymmetry between the two SDKs: `sample_rate` is not a first-class
+parameter in the OpenAI **Python** SDK, so passing it to `create()` raises
+`TypeError`. Send it through `extra_body`. The Node SDK is more permissive and
+accepts it inline in the request object.
+
+```python theme={null}
+with client.audio.speech.with_streaming_response.create(
+    model="fish-audio/s2.1-pro-free",
+    input="Hello from Fish Audio!",
+    voice="",
+    response_format="wav",
+    extra_body={"sample_rate": 16000},
+) as r:
+    r.stream_to_file("out.wav")
+```
+
+Your existing model names carry over: `tts-1`, `tts-1-hd`, and
+`gpt-4o-mini-tts` are accepted as aliases for `fish-audio/s2.1-pro`. A name
+that is neither a known alias nor a Fish model is refused with a 400, never
+silently substituted.
+
+## Transcription
+
+`POST /v1/audio/transcriptions`
+
+```python Python theme={null}
+tr = client.audio.transcriptions.create(
+    model="fish-audio/transcribe-1",
+    file=open("meeting.wav", "rb"),
+    response_format="verbose_json",  # json | verbose_json | text | srt | vtt
+    timestamp_granularities=["word"],
+)
+```
+
+```javascript Node theme={null}
+import fs from "node:fs";
+
+const tr = await client.audio.transcriptions.create({
+  model: "fish-audio/transcribe-1",
+  file: fs.createReadStream("meeting.wav"),
+  response_format: "verbose_json", // json | verbose_json | text | srt | vtt
+  timestamp_granularities: ["word"],
+});
+```
+
+```bash curl theme={null}
+curl https://api.fish.audio/compat/v1/audio/transcriptions \
+  -H "Authorization: Bearer $FISH_API_KEY" \
+  -F model=fish-audio/transcribe-1 \
+  -F file=@meeting.wav \
+  -F response_format=verbose_json \
+  -F 'timestamp_granularities[]=word'
+```
+
+`timestamp_granularities=["word"]` is what adds the top-level `words` array;
+without it `verbose_json` returns `segments[]` alone. (Fish times every word, so
+`segments[]` is per-word either way; the flag controls the `words` array, not
+the precision.)
+
+Subtitle formats (`srt`, `vtt`) are aggregated from Fish's word-level
+timestamps into phrase-length cues, so they won't line up one-to-one with the
+per-word entries `verbose_json` returns in `segments[]`.
+
+In `verbose_json`, the `language` field echoes the language **you** sent, not a
+detection result; `transcribe-1` needs no hint to work. Send none and the field
+comes back as an empty string, not a failure. Don't route on it. (The value you send is still passed to Fish's ASR;
+it's only the reported field that is an echo rather than a measurement.)
+
+Transcription model names carry over the same way: `whisper-1`,
+`gpt-4o-transcribe`, and `gpt-4o-mini-transcribe` are accepted as aliases for
+`fish-audio/transcribe-1`; an unrecognized name is refused with the same 400.
+
+For speaker turns, long recordings, and inline emotion cues, use
+`transcribe-1-pro` on the native
+[Speech to Text API](https://docs.fish.audio/features/speech-to-text.md) instead.
+
+> [!NOTE]
+>
+> In `verbose_json`, the Whisper-engine internals (`avg_logprob`,
+> `no_speech_prob`, `compression_ratio`, `temperature`) are neutral constants;
+> don't build quality filters on them.
+
+The OpenAI SDK's `client.audio.translations` has no counterpart here:
+`POST /v1/audio/translations` is a 404. Transcribe in the source language and
+translate the text downstream.
+
+## Chat-modality audio
+
+`POST /v1/chat/completions` serves TTS and STT in the chat-completions shape,
+for SDKs and frameworks that only speak chat: LangChain, Vercel AI SDK, and
+similar.
+
+For **speech output**, request the audio modality; the last user message's text
+is synthesized:
+
+```python Python theme={null}
+import base64
+
+resp = client.chat.completions.create(
+    model="fish-audio/s2.1-pro",
+    modalities=["text", "audio"],
+    audio={"voice": "", "format": "mp3"},
+    messages=[{"role": "user", "content": "Hello from Fish Audio!"}],
+)
+open("hello.mp3", "wb").write(base64.b64decode(resp.choices[0].message.audio.data))
+```
+
+```javascript Node theme={null}
+import fs from "node:fs";
+
+const resp = await client.chat.completions.create({
+  model: "fish-audio/s2.1-pro",
+  modalities: ["text", "audio"],
+  audio: { voice: "", format: "mp3" },
+  messages: [{ role: "user", content: "Hello from Fish Audio!" }],
+});
+fs.writeFileSync(
+  "hello.mp3",
+  Buffer.from(resp.choices[0].message.audio.data, "base64"),
+);
+```
+
+```bash curl theme={null}
+curl https://api.fish.audio/compat/v1/chat/completions \
+  -H "Authorization: Bearer $FISH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "fish-audio/s2.1-pro",
+       "modalities": ["text", "audio"],
+       "audio": {"voice": "", "format": "mp3"},
+       "messages": [{"role": "user", "content": "Hello from Fish Audio!"}]}'
+```
+
+With `stream: true` the audio arrives over SSE in base64 chunks that are safe
+to concatenate as they come.
+
+For **speech input**, put an `input_audio` content part in the last user
+message; the reply's `content` is the transcript.
+
+Two refusals on this endpoint: `n` must be 1, and one call cannot combine audio
+input with audio output.
+
+## Realtime WebSocket
+
+`wss://api.fish.audio/compat/v1/realtime?model=fish-audio/s2.1-pro`
+
+The SDK derives the WebSocket URL from the same client:
+
+```javascript theme={null}
+import OpenAI from "openai";
+import { OpenAIRealtimeWS } from "openai/beta/realtime/ws";
+
+const client = new OpenAI({
+  baseURL: "https://api.fish.audio/compat/v1",
+  apiKey: process.env.FISH_API_KEY,
+});
+const rt = new OpenAIRealtimeWS({ model: "fish-audio/s2.1-pro" }, client);
+// Stand-in for your audio pipeline; deltas are base64 chunks.
+const playChunk = b64 => process.stdout.write(`audio: ${b64.length} b64 chars\n`);
+
+rt.on("session.created", () => {
+  rt.send({
+    type: "conversation.item.create",
+    item: {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "Hello from Fish Audio!" }],
+    },
+  });
+  rt.send({ type: "response.create" });
+});
+rt.on("response.output_audio.delta", ev => playChunk(ev.delta));
+```
+
+The essentials: the endpoint speaks the Realtime **GA** event names, you drive
+turn detection yourself (`input_audio_buffer.commit` ends an utterance;
+server-side VAD is refused, not ignored), and transcription runs over the same
+socket or in a dedicated transcription session. The full event list, format
+and voice rules, and transcription-session handshakes are in the
+[Realtime protocol reference](https://docs.fish.audio/developer-guide/compat/realtime-protocol.md).
+
+## Error handling
+
+Errors map to your SDK's typed exceptions (`AuthenticationError`,
+`RateLimitError`, `APIStatusError`, …). The envelope carries the HTTP status as
+an integer `code`:
+
+```json theme={null}
+{
+  "error": {
+    "code": 400,
+    "message": "…",
+    "type": "invalid_request_error"
+  }
+}
+```
+
+Errors from the Fish Audio API keep their original status (for example 402
+when your account is out of credit) and carry `type: "provider_error"` plus
+`"metadata": {"provider_name": "fish-audio"}`. Errors from the compatibility
+layer itself carry no `metadata`. Rate limits return 429 with a `Retry-After`
+header.
+
+Authentication produces both kinds, and the `type` tells you which problem you
+have. No key, or a header that can't be parsed, is a 401 with
+`type: "authentication_error"` and no `metadata`: nothing was checked against
+your account. A key that fails validation is a 401 with
+`type: "provider_error"` and `metadata.provider_name: "fish-audio"`: the key
+itself is invalid. Both surface as your SDK's `AuthenticationError`.
+
+`GET /v1/models` is unauthenticated and answers even without a key, so it is
+not a way to check whether a key is valid.
+
+## Going further
+
+> [card] [Compatibility](https://docs.fish.audio/developer-guide/compat/capabilities.md)
+>
+> The full contract: mappings, limits, and explicit refusals.
+
+> [card] [Fish-native parameters](https://docs.fish.audio/developer-guide/compat/capabilities.md#reaching-fish-native-parameters)
+>
+> `latency`, `temperature`, and zero-shot cloning through the OpenAI SDK.
+
+
+This documentation is built and hosted on [Mintlify](https://mintlify.com), a developer documentation platform.

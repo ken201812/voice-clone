@@ -1,0 +1,84 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.fish.audio/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Get Your API Key
+
+> Create a Fish Audio account, generate an API key, and make your first request
+
+Everything you build with Fish Audio (the API, the Python library, JavaScript) authenticates with a single **API key**. Here's how to get one and make your first call in a couple of minutes.
+
+## 1. Create an account and key
+
+**1. Sign up**
+
+[Sign up on fish.audio](https://fish.audio/app/developers/get-started/?utm_source=docs\&utm_medium=api-key-page\&utm_content=sign-up), create an account, and verify your email.
+
+**2. Open Get Started**
+
+Sign in and open [Get Started](https://fish.audio/app/developers/get-started/?utm_source=docs\&utm_medium=api-key-page\&utm_content=get-api-key).
+
+**3. Create a key**
+
+Click **Get your API key**. The key is created in one click and shown only once, so **copy it and store it securely**.
+
+> [!WARNING]
+>
+> Never commit your API key to version control or share it publicly.
+
+## 2. Store it as an environment variable
+
+The SDKs and the examples throughout these docs read your key from `FISH_API_KEY`:
+
+```bash theme={null}
+export FISH_API_KEY="your_api_key_here"
+```
+
+This keeps the key out of your code and lets you use different keys for development and production.
+
+## 3. Make your first request
+
+Install the Python SDK first: `pip install fish-audio-sdk`.
+
+```python Python theme={null}
+from fishaudio import FishAudio
+from fishaudio.utils import save
+
+client = FishAudio()  # reads FISH_API_KEY
+audio = client.tts.convert(text="Hello from Fish Audio!", model="s2.1-pro-free")  # free model
+save(audio, "hello.mp3")
+```
+
+```bash API (curl) theme={null}
+curl --request POST https://api.fish.audio/v1/tts \
+  --header "Authorization: Bearer $FISH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --header "model: s2.1-pro-free" \
+  --data '{ "text": "Hello from Fish Audio!", "format": "mp3" }' \
+  --output hello.mp3
+```
+
+You just generated your first audio. Where to next:
+
+> [card] [Text to Speech](https://docs.fish.audio/features/text-to-speech.md)
+>
+> Voices, formats, speed, and streaming.
+
+> [card] [Quick Start](https://docs.fish.audio/developer-guide/getting-started/quickstart.md)
+>
+> A fuller first-request walkthrough.
+
+> [card] [Voice Cloning](https://docs.fish.audio/features/voice-cloning.md)
+>
+> Build a custom voice from your own audio.
+
+> [card] [Speech to Text](https://docs.fish.audio/features/speech-to-text.md)
+>
+> Transcribe audio with timestamps.
+
+> [!TIP]
+>
+> **Building with an AI coding agent?** Install the Fish Audio skill so it writes correct SDK/API code: `npx skills add docs.fish.audio`. See [AI Coding Agents](https://docs.fish.audio/developer-guide/resources/coding-agents.md).
+
+
+This documentation is built and hosted on [Mintlify](https://mintlify.com), a developer documentation platform.

@@ -1,0 +1,111 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.fish.audio/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Errors
+
+> HTTP status codes, the error response shape, and how to handle them in any language
+
+Fish Audio errors come back as JSON with a `message` and a `status`:
+
+```json theme={null}
+{ "message": "Invalid Token", "status": 401 }
+```
+
+(A request whose body can't be parsed returns a plain-text parse error instead.)
+
+Some endpoints add fields. For example, `transcribe-1-pro` speech-to-text errors also include `code` and `request_id`; see [Speech to Text errors](https://docs.fish.audio/api-reference/endpoint/openapi-v1/speech-to-text.md#errors). Errors returned by the network edge in front of the API, such as some `413` or `5xx` responses, may not be JSON.
+
+## Status codes
+
+| Status | Meaning | What to do |
+| - | - | - |
+| `400` | Bad request: invalid parameters, or a `reference_id` / voice that doesn't exist | Fix the request; read the `message`. |
+| `401` | Invalid or missing API key | Send `Authorization: Bearer <key>`; check it on [API Keys](https://fish.audio/app/api-keys). |
+| `402` | No API credit for the model you called | On a \$0 balance, use the model `s2.1-pro-free`. For paid models, add API credit on [API Billing](https://fish.audio/app/developers/billing/). |
+| `403` | Not permitted for this key/resource | Check the key's scope and the resource owner. |
+| `404` | Model or voice not found | Verify the `model_id` / `reference_id`. |
+| `429` | Too many requests, for example when your account is at its [concurrency limit](https://docs.fish.audio/developer-guide/models-pricing/pricing-and-rate-limits.md#concurrent-request-limits) | Back off and retry (see below). |
+| `5xx` | Server error | Retry with backoff; if it persists, contact support. |
+
+## Retries
+
+Retry `429` and `5xx` with exponential backoff. Don't retry other `4xx` codes; they won't succeed without a change to the request.
+
+Install the Python SDK first: `pip install fish-audio-sdk`.
+
+```python theme={null}
+import time
+from fishaudio import FishAudio
+from fishaudio.exceptions import RateLimitError, APIError
+
+client = FishAudio()
+
+for attempt in range(5):
+    try:
+        audio = client.tts.convert(text="Hello!")
+        break
+    except RateLimitError:
+        time.sleep(2 ** attempt)            # 1s, 2s, 4s, ...
+    except APIError as e:
+        if e.status >= 500:
+            time.sleep(2 ** attempt)
+        else:
+            raise                            # 4xx: fix the request
+```
+
+## Handling errors in the SDKs
+
+Both SDKs raise typed exceptions you can branch on. The base class carries the status and the parsed body.
+
+```python Python theme={null}
+from fishaudio.exceptions import (
+    AuthenticationError,  # 401
+    RateLimitError,       # 429
+    NotFoundError,        # 404
+    APIError,             # any other HTTP error; has .status and .message
+    FishAudioError,       # base class for all SDK errors
+)
+
+try:
+    audio = client.tts.convert(text="Hello!")
+except AuthenticationError:
+    ...  # invalid or missing key
+except RateLimitError:
+    ...  # back off and retry
+except NotFoundError:
+    ...  # bad reference_id / model id
+except APIError as e:
+    print(e.status, e.message)  # 400, 402, 5xx, ...
+```
+
+```javascript JavaScript theme={null}
+import {
+  UnauthorizedError,         // 401
+  TooEarlyError,             // 429
+  NotFoundError,             // 404
+  BadRequestError,           // 400
+  UnprocessableEntityError,  // 422
+  FishAudioError,            // base; has .statusCode and .body
+} from "fish-audio";
+
+try {
+  await client.textToSpeech.convert({ text: "Hello!" }, "s2-pro");
+} catch (err) {
+  if (err instanceof UnauthorizedError) {
+    // invalid or missing key
+  } else if (err instanceof TooEarlyError) {
+    // back off and retry
+  } else if (err instanceof FishAudioError) {
+    console.error(err.statusCode, err.body);
+  }
+}
+```
+
+> [!NOTE]
+>
+> Audio playback via `play()` needs `ffmpeg`. If it's missing, the Python SDK raises
+> `DependencyError`. Install `ffmpeg` or save the audio to a file instead.
+
+
+This documentation is built and hosted on [Mintlify](https://mintlify.com), a developer documentation platform.

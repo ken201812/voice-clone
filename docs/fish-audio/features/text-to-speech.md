@@ -1,0 +1,360 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.fish.audio/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Text to Speech
+
+> Turn text into lifelike speech
+
+Generate natural speech from text with the `s2.1-pro`, `s2-pro`, and deprecated `s1` models, from the API directly, the Python library, or JavaScript.
+
+> [card] [Use it in the web app](https://fish.audio/app/text-to-speech)
+>
+> No code: type, pick a voice, generate.
+
+> [card] [API reference](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech.md)
+>
+> Every parameter for `POST /v1/tts`.
+
+> [card] [Cookbooks](https://docs.fish.audio/developer-guide/sdk-guide/cookbook/streaming-to-file.md)
+>
+> Ready-made recipes: streaming, telephony, and more.
+
+## When to use it
+
+> [card] Voiceovers & narration
+>
+> Audiobooks, explainers, ads, and video narration.
+
+> [card] Conversational AI
+>
+> Speak an assistant's replies. Pair with [streaming](https://docs.fish.audio/features/realtime-streaming.md) for low latency.
+
+> [card] Accessibility & IVR
+>
+> Read content aloud, phone menus, notifications.
+
+> [card] Custom voices
+>
+> Speak in a [cloned voice](https://docs.fish.audio/features/voice-cloning.md) you own.
+
+## Quick start
+
+Send text, get back audio. Choose your implementation:
+
+Install the Python SDK first: `pip install fish-audio-sdk`.
+
+```python Python theme={null}
+from fishaudio import FishAudio
+from fishaudio.utils import save
+
+client = FishAudio()  # reads FISH_API_KEY
+audio = client.tts.convert(text="Hello from Fish Audio!")
+save(audio, "out.mp3")
+```
+
+```bash API (curl) theme={null}
+curl --request POST https://api.fish.audio/v1/tts \
+  --header "Authorization: Bearer $FISH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --header "model: s2-pro" \
+  --data '{ "text": "Hello from Fish Audio!", "format": "mp3" }' \
+  --output out.mp3
+```
+
+```javascript JavaScript theme={null}
+import { FishAudioClient } from "fish-audio";
+import { writeFile } from "fs/promises";
+
+const client = new FishAudioClient({ apiKey: process.env.FISH_API_KEY });
+
+// Pass the model explicitly: the current npm release (`fish-audio` 0.1.0)
+// defaults to `s1`, which is deprecated and retires on December 31, 2026.
+const stream = await client.textToSpeech.convert(
+  { text: "Hello from Fish Audio!" },
+  "s2-pro",
+);
+
+const chunks = [];
+for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+await writeFile("hello.mp3", Buffer.concat(chunks));
+```
+
+## Use a specific voice
+
+Pass a **voice model id** (`reference_id`). Find ids in the [Voice Library](https://docs.fish.audio/overview/platform.md) or create your own via [Voice Cloning](https://docs.fish.audio/features/voice-cloning.md).
+
+```python Python theme={null}
+audio = client.tts.convert(
+    text="This uses a specific voice.",
+    reference_id="9a9cf47702da476aa4629e2506d4a857",
+)
+```
+
+```bash API (curl) theme={null}
+curl --request POST https://api.fish.audio/v1/tts \
+  --header "Authorization: Bearer $FISH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --header "model: s2-pro" \
+  --data '{
+    "text": "This uses a specific voice.",
+    "reference_id": "9a9cf47702da476aa4629e2506d4a857",
+    "format": "mp3"
+  }' \
+  --output out.mp3
+```
+
+## Implementation details
+
+### Models
+
+* **`s2.1-pro`**: recommended for production, with improved quality, latency, and throughput over S2-Pro.
+* **`s2.1-pro-free`**: the same model at \$0 for testing, prototyping, development, and smaller businesses, without TTFA or DPA guarantees.
+* **`drama-3`**: model you direct in plain language, with sounds, pauses, and paired tags for specific words. See [Drama 3](https://docs.fish.audio/features/text-to-speech/drama-3.md).
+* **`s2-pro`**: previous-generation S2 model with multi-speaker and natural-language expression control.
+* **`s1`**: previous generation, `(parenthesis)` emotion tags. S1 is deprecated and will be retired on December 31, 2026. After that date, requests that specify `s1` are served by `s2.1-pro`. See [Migrate from S1](https://docs.fish.audio/developer-guide/models-pricing/migrate-from-s1.md).
+
+In the API, select with the `model` request header; requests without it use `s2.1-pro`. The Python SDK always sends a model and defaults to `model="s2-pro"`. See [Choosing a Model](https://docs.fish.audio/developer-guide/models-pricing/choosing-a-model.md).
+
+### Output formats
+
+`mp3` (default), `wav`, `pcm`, `opus`. Set `format` (and optionally `mp3_bitrate`, `sample_rate`).
+
+```python Python theme={null}
+from fishaudio.types import TTSConfig
+
+audio = client.tts.convert(
+    text="High quality",
+    config=TTSConfig(format="wav", sample_rate=44100),
+)
+```
+
+```bash API (curl) theme={null}
+curl --request POST https://api.fish.audio/v1/tts \
+  --header "Authorization: Bearer $FISH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --header "model: s2-pro" \
+  --data '{ "text": "High quality", "format": "wav", "sample_rate": 44100 }' \
+  --output out.wav
+```
+
+### Speed & prosody
+
+Adjust speech speed (0.5–2.0) and volume.
+
+```python Python theme={null}
+audio = client.tts.convert(text="Speaking faster.", speed=1.5)
+```
+
+```bash API (curl) theme={null}
+curl --request POST https://api.fish.audio/v1/tts \
+  --header "Authorization: Bearer $FISH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --header "model: s2-pro" \
+  --data '{ "text": "Speaking faster.", "prosody": { "speed": 1.5 } }' \
+  --output out.mp3
+```
+
+### Generation methods (Python)
+
+The Python SDK exposes three ways to generate, depending on whether you have the full text upfront and how you want to consume the audio:
+
+| Method | Returns | Use it for |
+| - | - | - |
+| `tts.convert()` | complete audio `bytes` | most cases: you have the text, you want the file |
+| `tts.stream()` | `AudioStream` (iterate chunks, or `.collect()`) | memory-efficient transfer of large audio; write chunks to disk as they arrive |
+| `tts.stream_websocket()` | iterator of audio `bytes` | text arriving in real time (LLM tokens, live captions) |
+
+```python theme={null}
+# Memory-efficient: write each chunk as it arrives instead of buffering
+audio_stream = client.tts.stream(text="A very long passage...")
+with open("out.mp3", "wb") as f:
+    for chunk in audio_stream:
+        f.write(chunk)
+```
+
+For real-time text streaming with `stream_websocket()`, see [Realtime Streaming](https://docs.fish.audio/features/realtime-streaming.md).
+
+### Instant voice cloning (reference audio)
+
+Instead of a saved `reference_id`, pass raw audio plus its transcript to clone a voice on the fly, with no training step. Best with a clean 10–30s sample.
+
+```python theme={null}
+from fishaudio.types import ReferenceAudio
+
+with open("sample.wav", "rb") as f:
+    audio = client.tts.convert(
+        text="Spoken in the reference voice.",
+        references=[ReferenceAudio(audio=f.read(), text="Transcript of the sample.")],
+    )
+```
+
+To reuse a voice across many requests, [clone it once](https://docs.fish.audio/features/voice-cloning.md) and pass the resulting `reference_id` instead.
+
+### Format & bitrate
+
+Pick a format for your delivery channel, and tune bitrate to trade size against quality:
+
+| Format | Notes |
+| - | - |
+| `mp3` (default) | good size/quality balance; set `mp3_bitrate` to `64`, `128`, or `192` |
+| `wav` | uncompressed, highest quality; set `sample_rate` (e.g. `44100`) |
+| `pcm` | raw samples, no container; for low-latency playback and telephony pipelines |
+| `opus` | efficient for streaming; bitrate is automatic (`opus_bitrate=-1000`) |
+
+```python theme={null}
+from fishaudio.types import TTSConfig
+
+audio = client.tts.convert(
+    text="Smaller file, lower bitrate.",
+    config=TTSConfig(format="mp3", mp3_bitrate=64),
+)
+```
+
+### Latency & chunk length
+
+`latency` trades stability for speed; `chunk_length` controls how much text the engine batches before it starts generating.
+
+* `latency="balanced"` (default): lower time-to-first-audio (\~300ms). Good for interactive use.
+* `latency="normal"`: most stable output, at slightly higher latency.
+* `chunk_length` (`100`–`300`, default `200`): smaller chunks start audio sooner; larger chunks are more efficient for long text.
+
+```python Python theme={null}
+from fishaudio.types import TTSConfig
+
+audio = client.tts.convert(
+    text="Quick, responsive output.",
+    config=TTSConfig(latency="balanced", chunk_length=150),
+)
+```
+
+```bash API (curl) theme={null}
+curl --request POST https://api.fish.audio/v1/tts \
+  --header "Authorization: Bearer $FISH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --header "model: s2-pro" \
+  --data '{ "text": "Quick, responsive output.", "latency": "balanced", "chunk_length": 150 }' \
+  --output out.mp3
+```
+
+### Direct API (MessagePack)
+
+`POST /v1/tts` also accepts a MessagePack body (`Content-Type: application/msgpack`), the path the [API reference](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech.md) is built around. Use it to send binary reference audio in the request without base64 overhead, or when you don't want the SDK.
+
+```python theme={null}
+import os
+import httpx
+import ormsgpack
+
+payload = {"text": "Hello from the direct API.", "reference_id": "YOUR_VOICE_ID", "format": "mp3"}
+
+resp = httpx.post(
+    "https://api.fish.audio/v1/tts",
+    content=ormsgpack.packb(payload),
+    headers={
+        "Authorization": f"Bearer {os.environ['FISH_API_KEY']}",
+        "Content-Type": "application/msgpack",
+        "model": "s2-pro",
+    },
+)
+with open("out.mp3", "wb") as f:
+    f.write(resp.content)
+```
+
+If the `model` header is omitted or set to an unrecognized value, the request falls back to `s2.1-pro`. JSON and MessagePack accept the same fields.
+
+### Advanced generation tuning
+
+For finer control, `TTSConfig` exposes the model's sampling parameters. The defaults are well-tuned. Reach for these only when you need to dial in determinism or curb artifacts.
+
+```python theme={null}
+from fishaudio.types import TTSConfig, Prosody
+
+config = TTSConfig(
+    prosody=Prosody(speed=1.1, volume=0),
+    temperature=0.7,            # lower = more deterministic
+    top_p=0.7,
+    repetition_penalty=1.2,     # >1.0 curbs repeated sounds
+    max_new_tokens=1024,        # cap audio length per chunk
+    normalize=True,             # expand numbers/dates for natural reading
+)
+
+audio = client.tts.convert(text="Carefully tuned output.", config=config)
+```
+
+Define a `TTSConfig` once and pass it to many `convert()` calls. See the [full field list](https://docs.fish.audio/api-reference/sdk/python/types.md#ttsconfig-objects) for every parameter and default.
+
+### Language
+
+`language` is an optional BCP-47 tag for the language of your text, such as `en`, `es-MX`, `zh-CN`, or `zh-TW`. It is case-insensitive, and `_` is read as `-`.
+
+It is used only by text normalization (how numbers, dates, units, and symbols are spelled out before synthesis) and by word-timestamp alignment. It is not passed to the speech model and does not change the voice, accent, or audio quality. A wrong tag only changes how those tokens are spelled out.
+
+The official SDKs don't expose `language` yet, so send it in the request body:
+
+```bash API (curl) theme={null}
+curl --request POST https://api.fish.audio/v1/tts \
+  --header "Authorization: Bearer $FISH_API_KEY" \
+  --header "Content-Type: application/json" \
+  --header "model: s2-pro" \
+  --data '{ "text": "La entrada cuesta $300.", "language": "es-MX" }' \
+  --output out.mp3
+```
+
+* **Default**: omit `language`, or send `"auto"` or an empty string, and the language is detected for each text chunk. This is the same behavior as before the field was added.
+* **Regional conventions**: Spanish without a region follows Spain conventions, so `$300` becomes "trescientos dólares" and decimals use a comma. Send `es-MX` for Mexican readings ("pesos", "punto"). For Traditional Chinese, send `zh-TW`, which uses its own rules. Portuguese follows Brazilian conventions, with or without the `BR` region.
+* **Tags without rules**: a tag with no dedicated normalization rules skips normalization instead of failing. See [Supported normalization languages](#supported-normalization-languages).
+* **Mixed-language text**: leave `language` unset.
+* **`normalize: false`**: `language` then only affects word timestamps.
+* **Validation**: values longer than 35 characters, or containing anything other than letters, digits, `-`, and `_`, are rejected with HTTP 400.
+
+The same field is accepted by `POST /v1/tts` (JSON and MessagePack), the with-timestamps HTTP and SSE routes, and the [WebSocket](https://docs.fish.audio/api-reference/endpoint/websocket/tts-live.md) start event as `request.language`. On WebSocket, it applies to the whole session.
+
+### Supported normalization languages
+
+Text normalization has dedicated rules for the languages below. Tags match case-insensitively, and `_` is read as `-`.
+
+| Language | `language` tags |
+| - | - |
+| English | `en`, `en-US`, `en-GB`, `en-AU`, `en-CA`, `en-IE`, `en-NZ` |
+| Chinese (Simplified) | `zh`, `zh-CN`, `zh-SG`, `zh-Hans`, `zh-Hans-CN`, `zh-Hans-SG` |
+| Chinese (Traditional) | `zh-TW`, `zh-Hant`, `zh-Hant-TW` |
+| Japanese | `ja`, `ja-JP` |
+| Korean | `ko`, `ko-KR` |
+| Spanish (Spain) | `es`, `es-ES` |
+| Spanish (Mexico) | `es-MX` |
+| French | `fr`, `fr-FR`, `fr-CA`, `fr-BE`, `fr-CH` |
+| German | `de`, `de-DE`, `de-AT`, `de-CH` |
+| Italian | `it`, `it-IT`, `it-CH` |
+| Portuguese (Brazil) | `pt`, `pt-BR` |
+| Russian | `ru`, `ru-RU` |
+| Arabic | `ar`, `ar-SA`, `ar-AE`, `ar-EG` |
+| Turkish | `tr`, `tr-TR` |
+| Tagalog (Filipino) | `tl`, `tl-PH`, `fil`, `fil-PH` |
+
+Each row has its own rules, so the tag you pick changes the readings. For example, with `es` or `es-ES`, `$300` is read as "trescientos dólares" and the `0.9` in `0.9%` as "cero coma nueve". With `es-MX`, they are read as "trescientos pesos" and "cero punto nueve". In the same way, `zh-TW` uses Traditional Chinese rules, not the Simplified Chinese ones.
+
+* Any other tag skips normalization, with no error, and the text is still synthesized as written. Today that includes `zh-HK`, `yue`, `pt-PT`, `es-419`, and `es-US`.
+* With `language` unset, the language of each chunk is auto-detected among the languages above. Chinese written mostly in Traditional characters uses the Traditional Chinese rules. Portuguese, Turkish, and Tagalog are detected only when the detection is confident, so set `language` for short texts in these languages. Chunks whose language can't be detected are synthesized without normalization.
+* The list grows over time as normalization rules are added.
+
+## Going further
+
+> [card] [Stream as it generates](https://docs.fish.audio/features/realtime-streaming.md)
+>
+> Lowest latency for conversational and live apps.
+
+> [card] [Emotion & expression](https://docs.fish.audio/developer-guide/core-features/emotions.md)
+>
+> Direct delivery with tags and prosody.
+
+> [card] [Full API parameters](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech.md)
+>
+> Every field, type, and default.
+
+> [card] [Python reference](https://docs.fish.audio/api-reference/sdk/python/resources.md)
+>
+> `tts.convert` / `stream` / `stream_websocket`.
+
+
+This documentation is built and hosted on [Mintlify](https://mintlify.com), a developer documentation platform.
